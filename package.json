@@ -1,0 +1,29 @@
+{
+  "name": "email-scanner-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for AI-powered Gmail scanning, security analysis, and daily digest reports",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "type-check": "tsc --noEmit",
+    "daily-scan": "tsx scripts/daily-scan.ts",
+    "get-token": "tsx scripts/get-refresh-token.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "googleapis": "^144.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

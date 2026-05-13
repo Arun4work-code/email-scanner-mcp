@@ -1,0 +1,73 @@
+name: Daily Email Scan
+
+on:
+  schedule:
+    # Runs at 06:30 UTC every day (12:00 PM IST)
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      hours_back:
+        description: "Hours of email history to scan"
+        required: false
+        default: "24"
+      max_emails:
+        description: "Maximum emails to analyze"
+        required: false
+        default: "200"
+
+jobs:
+  scan:
+    name: Scan & Analyze Emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run email scan
+        id: scan
+        env:
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
+          SCAN_HOURS_BACK: ${{ github.event.inputs.hours_back || '24' }}
+          SCAN_MAX_EMAILS: ${{ github.event.inputs.max_emails || '200' }}
+          OUTPUT_DIR: ./reports
+        # Exit code 2 = critical threats found (still "success" for artifact upload)
+        run: |
+          tsx scripts/daily-scan.ts
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: email-report-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+
+      - name: Post summary to GitHub Actions
+        if: always()
+        run: |
+          if [ -f reports/*.md ]; then
+            cat reports/*.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if critical threats detected
+        if: steps.scan.outputs.exit_code == '2'
+        run: |
+          echo "::error::CRITICAL email threats detected! Check the report artifact."
+          exit 1
