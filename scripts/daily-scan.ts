@@ -22,8 +22,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("[daily-scan] ERROR: Missing ANTHROPIC_API_KEY in environment");
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("[daily-scan] ERROR: Missing GEMINI_API_KEY in environment");
     process.exit(1);
   }
 

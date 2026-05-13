@@ -1,9 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { RawEmail, AnalyzedEmail, EmailCategory, ThreatLevel, SecurityFlag } from "./types.js";
 
-const client = new Anthropic();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-const SYSTEM_PROMPT = `You are an expert email security analyst and inbox organizer. Your job is to analyze emails and return structured JSON analysis.
+// System instruction is automatically cached by Gemini across calls
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+  systemInstruction: `You are an expert email security analyst and inbox organizer. Your job is to analyze emails and return structured JSON analysis.
 
 For each email, determine:
 1. **Category** (one of): personal, professional, financial, shopping, social, newsletter, promotional, travel, health, security_alert, spam, other
@@ -36,10 +39,11 @@ THREAT DETECTION RULES:
 
 SPF/DKIM/DMARC: SPF fail + unknown sender = suspicious. All three failing = high threat.
 
-DELETION SUGGESTIONS: newsletters older than a week, promotional emails already read, repeated notifications, social notifications from inactive accounts.
+DELETION SUGGESTIONS: newsletters older than a week, promotional emails already read, repeated notifications.
 UNSUBSCRIBE SUGGESTIONS: any recurring promotional/newsletter sender the user likely doesn't need.
 
-Always respond with valid JSON only — no markdown, no explanation text.`;
+Always respond with valid JSON only — no markdown, no explanation text.`,
+});
 
 interface EmailBatchAnalysis {
   emailId: string;
@@ -109,52 +113,28 @@ Return ONLY a JSON array, no other text.`;
 export async function analyzeEmailBatch(emails: RawEmail[]): Promise<AnalyzedEmail[]> {
   if (emails.length === 0) return [];
 
-  // Process in batches of 15 to stay within token limits
   const batchSize = 15;
   const results: AnalyzedEmail[] = [];
 
   for (let i = 0; i < emails.length; i += batchSize) {
     const batch = emails.slice(i, i + batchSize);
 
-    // Use prompt caching (anthropic-beta header) to cache the large system prompt
-    // across repeated batch calls — significantly reduces cost and latency.
-    const response = await (client as any).messages.create(
-      {
-        model: "claude-sonnet-4-6",
-        max_tokens: 8000,
-        system: [
-          {
-            type: "text",
-            text: SYSTEM_PROMPT,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        messages: [
-          {
-            role: "user",
-            content: buildEmailPrompt(batch),
-          },
-        ],
-      },
-      {
-        headers: { "anthropic-beta": "prompt-caching-2024-07-31" },
-      }
-    );
+    const result = await model.generateContent(buildEmailPrompt(batch));
+    let text = result.response.text().trim();
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    // Strip markdown code fences if Gemini wraps the JSON
+    text = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
 
     let analyses: EmailBatchAnalysis[] = [];
     try {
       analyses = JSON.parse(text);
     } catch {
-      // Try to extract JSON from response if there's extra text
       const match = text.match(/\[[\s\S]*\]/);
       if (match) {
         try {
           analyses = JSON.parse(match[0]);
         } catch {
-          console.error("Failed to parse batch analysis response");
-          analyses = [];
+          console.error(`[analyzer] Failed to parse batch ${i / batchSize + 1} response`);
         }
       }
     }
