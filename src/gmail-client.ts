@@ -155,6 +155,47 @@ export async function fetchEmails(options: ScanOptions = {}): Promise<RawEmail[]
   return emails;
 }
 
+export async function fetchEmailById(emailId: string): Promise<RawEmail | null> {
+  const gmail = createGmailClient();
+
+  const detail = await gmail.users.messages.get({
+    userId: "me",
+    id: emailId,
+    format: "full",
+  });
+
+  const msg = detail.data;
+  if (!msg.payload) return null;
+
+  const headers: HeaderEntry[] = msg.payload.headers ?? [];
+  const receivedHeaders = headers
+    .filter((h) => h.name?.toLowerCase() === "received")
+    .map((h) => h.value ?? "");
+  const authResults = parseAuthResults(receivedHeaders);
+  const attachmentNames = extractAttachments(msg.payload);
+  const body = extractBody(msg.payload);
+
+  return {
+    id: msg.id!,
+    threadId: msg.threadId!,
+    from: extractHeader(headers, "from"),
+    to: extractHeader(headers, "to"),
+    subject: extractHeader(headers, "subject") || "(no subject)",
+    snippet: msg.snippet ?? "",
+    body: body.slice(0, 2000),
+    date: extractHeader(headers, "date"),
+    labels: msg.labelIds ?? [],
+    hasAttachments: attachmentNames.length > 0,
+    attachmentNames,
+    messageId: extractHeader(headers, "message-id"),
+    replyTo: extractHeader(headers, "reply-to"),
+    returnPath: extractHeader(headers, "return-path"),
+    spfResult: authResults.spf,
+    dkimResult: authResults.dkim,
+    dmarcResult: authResults.dmarc,
+  };
+}
+
 export async function sendReportEmail(
   to: string,
   subject: string,
@@ -163,7 +204,7 @@ export async function sendReportEmail(
   const gmail = createGmailClient();
 
   const raw = [
-    `From: Email Scanner <${to}>`,
+    `From: Email Scanner <${process.env.GMAIL_USER_EMAIL ?? to}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     `MIME-Version: 1.0`,

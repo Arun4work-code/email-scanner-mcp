@@ -7,7 +7,7 @@ import {
 import { z } from "zod";
 import { runScan } from "./scanner.js";
 import { analyzeSingleEmail } from "./analyzer.js";
-import { fetchEmails } from "./gmail-client.js";
+import { fetchEmailById } from "./gmail-client.js";
 import { buildHtmlReport, buildMarkdownReport } from "./reporter.js";
 import type { ScanReport } from "./types.js";
 
@@ -162,12 +162,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "analyze_email") {
     const { emailId } = AnalyzeEmailSchema.parse(args);
-    const emails = await fetchEmails({ maxEmails: 1 });
-    const target = emails.find((e) => e.id === emailId);
+    const target = await fetchEmailById(emailId);
 
     if (!target) {
       return {
-        content: [{ type: "text", text: `Email ${emailId} not found in recent inbox.` }],
+        content: [{ type: "text", text: `Email ${emailId} not found.` }],
       };
     }
 
